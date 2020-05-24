@@ -1,9 +1,14 @@
+import time
 import asyncio
 
-# тут задачи еже минутнааа1
+from models import User
+import config
 
-
+# тут задачи ежи
 async def main():
 	while True:
-		print('p[osoaasd')
-		await asyncio.sleep(2)
+		start = time.monotonic()
+		User.update({User.score: User.score + 1}).execute()
+		if (end := time.monotonic() - start) > config.delay: 
+			end = config.delay
+		await asyncio.sleep(config.delay - end)

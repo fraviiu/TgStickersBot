@@ -1,5 +1,8 @@
 from os import environ
 
+
+delay = 30 # столько секунд займет 1 действие
+
 # файл базы данных
 basefile = 'base.db'
 

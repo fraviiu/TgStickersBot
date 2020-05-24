@@ -12,6 +12,7 @@ class BaseModel(peewee.Model):
 class User(BaseModel):
     chat_id = peewee.IntegerField(unique=True)
     nick = peewee.CharField(unique=True, max_length=25)
+    score = peewee.BigIntegerField(default=0)
 
     def __str__(self):
     	return f'{self.id} #{self.chat_id} - {self.nick}'

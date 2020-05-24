@@ -19,7 +19,7 @@ logging.basicConfig(handlers=(logging.FileHandler(config.logsfile),
 
 #кастомные задачи в асинхронщину
 loop = asyncio.new_event_loop()
-#loop.create_task(actions.main()) 
+loop.create_task(actions.main()) 
 
 
 bot = Bot(token=config.token, loop=loop, proxy=config.proxy_url)
@@ -54,7 +54,10 @@ async def about_user(message: types.Message):
 		edit_butt = types.InlineKeyboardButton(text='Сменить никнейм',
 			callback_data='edit')
 		markup.add(edit_butt)
-		await message.answer(f'Ваш id: {user.chat_id}\nВаш ник: {emojize(user.nick)}',
+		about_text = f'Ваш id: {user.chat_id}\
+		\nВаш ник: {emojize(user.nick)}\
+		\nВаш опыт: {user.score}'
+		await message.answer(about_text,
 			reply_markup=markup)
 	except User.DoesNotExist:
 		await message.answer('Вы ещё не создали профиль, напишите свой никнейм')
@@ -108,7 +111,11 @@ async def del_sticker(message: types.Message):
 
 @dp.message_handler(commands='sticks')
 async def all_stickers(message: types.Message):
-	for stick in Sticker.select():
+	stickers = Sticker.select()
+	if not stickers:
+		await message.answer('Ещё не существует ни одного стикера')
+		return
+	for stick in stickers:
 		await send_stick(message, stick)
 
 
@@ -163,11 +170,13 @@ async def delete_sticker(message: types.Message, state: FSMContext):
 
 
 @dp.message_handler(content_types=types.ContentTypes.STICKER)
-async def n_sticker(message: types.Message):
-	sticker_id = message.sticker.file_id
-	await message.answer(sticker_id)
-	await message.answer_sticker(sticker_id)
-	await message.answer(message.sticker)
+async def get_sticker(message: types.Message):
+	try: 
+		stick = Sticker.get(stick_uniq=message.sticker.file_unique_id)
+	except Sticker.DoesNotExist:
+		await message.answer('К сожелению такова стикера нету')
+		return
+	await send_stick(message, stick)
 
 
 if __name__ == '__main__':
