@@ -26,13 +26,14 @@ bot = Bot(token=config.token, loop=loop, proxy=config.proxy_url)
 dp = Dispatcher(bot, storage=MemoryStorage())
 
 
-class Profile(StatesGroup):
+class SUser(StatesGroup):
 	nick = State()
 
 
-class CreateStiker(StatesGroup):
+class SSticker(StatesGroup):
 	sticker = State()
 	name = State()
+	delete = State()
 
 
 async def check_nick(message: types.Message):
@@ -57,22 +58,28 @@ async def about_user(message: types.Message):
 			reply_markup=markup)
 	except User.DoesNotExist:
 		await message.answer('Вы ещё не создали профиль, напишите свой никнейм')
-		await Profile.nick.set()
+		await SUser.nick.set()
 
 
-@dp.message_handler(state=Profile.nick, content_types=types.ContentTypes.TEXT)
-async def create_profile(message: types.Message, state: FSMContext):
+@dp.message_handler(state=SUser.nick, content_types=types.ContentTypes.TEXT)
+async def nick_user(message: types.Message, state: FSMContext):
 	if await check_nick(message):
 		return
-	user = User.create(chat_id=message.chat.id, nick=demojize(message.text))
-	await message.answer(f'Ваш id: {user.chat_id}\nВаш ник: {emojize(user.nick)}')
+	if User.select().where(User.chat_id == message.chat.id):
+		user = User.get(chat_id=message.chat.id)
+		user.update(nick=message.text).execute()
+		await message.answer('Ник успешно изменен')
+	else:
+		user = User.create(chat_id=message.chat.id, nick=demojize(message.text))
+		await message.answer('Профиль создан успешно')
+	await about_user(message)
 	await state.finish()
 
 
 @dp.callback_query_handler(lambda call: call.data == 'edit')
 async def about_edit_nick(call: types.CallbackQuery):
 	await call.message.edit_text('Введите новый никнейм') 
-	await Profile.nick.set()
+	await SUser.nick.set()
 
 
 @dp.message_handler(commands='sticker')
@@ -80,9 +87,23 @@ async def about_sticker(message: types.Message):
 	try:
 		user = User.get(chat_id=message.chat.id)
 		await message.answer('Отправьте мне ваш стикер')
-		await CreateStiker.sticker.set()
+		await SSticker.sticker.set()
 	except User.DoesNotExist:
 		await message.answer('Вам нужен профиль для создания стикера')
+
+
+@dp.message_handler(commands='del')
+async def del_sticker(message: types.Message):
+	try:
+		user = User.get(chat_id=message.chat.id)
+	except User.DoesNotExist:
+		await message.answer('Вам нужен профиль для создания стикера')
+		return
+	for stick in Sticker.select().where(Sticker.author == user):
+		await message.answer(f'id: {stick.id}')
+		await send_stick(message, stick)
+	await message.answer('Напишите id стикера для удаления')
+	await SSticker.delete.set()
 
 
 @dp.message_handler(commands='sticks')
@@ -92,24 +113,25 @@ async def all_stickers(message: types.Message):
 
 
 async def send_stick(message: types.Message, stick: Sticker):
-	await message.answer(f'{stick.name}\nАвтор: {stick.author}')
+	await message.answer(f'{stick.name}\nАвтор: {stick.author.nick}')
 	await message.answer_sticker(stick.sticker)
 
 
-@dp.message_handler(state=CreateStiker.sticker, content_types=types.ContentTypes.STICKER)
+@dp.message_handler(state=SSticker.sticker, content_types=types.ContentTypes.STICKER)
 async def create_sticker(message: types.Message, state: FSMContext):
-	existing = Sticker.select().where(Sticker.stick_uniq == message.sticker.file_unique_id)
-	if existing:
+	if Sticker.select().where(Sticker.stick_uniq == message.sticker.file_unique_id):
 		await message.answer('Такой стикер уже существует')
-		await send_stick(message, existing)
+		stick = Sticker.get(stick_uniq=message.sticker.file_unique_id)
+		await send_stick(message, stick)
+		state.finish()
 		return
 	await state.update_data(sticker_id=message.sticker.file_id,
 		sticker_uniq_id=message.sticker.file_unique_id)
 	await message.answer('Придумайте название для стикера')
-	await CreateStiker.next()
+	await SSticker.name.set()
 
 
-@dp.message_handler(state=CreateStiker.name, content_types=types.ContentTypes.TEXT)
+@dp.message_handler(state=SSticker.name, content_types=types.ContentTypes.TEXT)
 async def name_sticker(message: types.Message, state: FSMContext):
 	slen = Sticker.name.max_length
 	if len(message.text) > slen:
@@ -121,8 +143,23 @@ async def name_sticker(message: types.Message, state: FSMContext):
 	Sticker.create(sticker=data['sticker_id'], stick_uniq=data['sticker_uniq_id'],
 		name=name, author=user)
 	await state.finish()
-	await message.answer(f'Стикер {name} создан успешно')
-	await message.answer_sticker(data['sticker'])
+	await message.answer(f'Стикер {name} создан успешно\nid:')
+	await message.answer(Sticker.get(stick_uniq=data['sticker_uniq_id']).id)
+	await message.answer_sticker(data['sticker_id'])
+
+
+@dp.message_handler(state=SSticker.delete, content_types=types.ContentTypes.TEXT)
+async def delete_sticker(message: types.Message, state: FSMContext):
+	if not message.text.isdigit():
+		await message.answer('id состоит из цифр если что))')
+		return
+	try:
+		Sticker.get(id=message.text).delete_instance()
+	except Sticker.DoesNotExist:
+		await message.answer(f'стикера с id: {message.text} - не существует')
+		return
+	await state.finish()
+	await message.answer('Стикер успешно удален')
 
 
 @dp.message_handler(content_types=types.ContentTypes.STICKER)
