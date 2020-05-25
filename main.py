@@ -179,5 +179,12 @@ async def get_sticker(message: types.Message):
 	await send_stick(message, stick)
 
 
+@dp.message_handler(commands=['start'])
+async def welcome(message: types.Message):
+	first = message.chat.first_name
+	last = message.chat.last_name
+	await message.answer(f'Привет, {first} {last}')
+
+
 if __name__ == '__main__':
 	executor.start_polling(dp, skip_updates=True)
