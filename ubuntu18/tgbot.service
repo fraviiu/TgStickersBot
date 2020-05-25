@@ -1,0 +1,14 @@
+[Unit]
+Description=TelegramStickersBot
+After=network.target
+
+[Service]
+User=iq
+Group=iq
+
+WorkingDirectory=/home/iq/TgStickersBot/
+Environment="PYTHONPATH=/home/iq/TgStickersBot/"
+ExecStart=/home/iq/TgStickersBot/.venv/bin/python /home/iq/TgStickersBot/main.py
+
+[Install]
+WantedBy=multi-user.target
