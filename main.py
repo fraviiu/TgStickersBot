@@ -3,7 +3,6 @@ import asyncio
 import os
 
 from aiogram import Bot, Dispatcher, types, executor
-from aiogram.utils.emoji import emojize, demojize
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.dispatcher import FSMContext
@@ -19,12 +18,13 @@ logging.basicConfig(handlers=(logging.FileHandler(config.logsfile),
 
 #кастомные задачи в асинхронщину
 loop = asyncio.new_event_loop()
-loop.create_task(actions.main()) 
+loop.create_task(actions.worker()) 
 
 
 bot = Bot(token=config.token, loop=loop, proxy=config.proxy_url)
 dp = Dispatcher(bot, storage=MemoryStorage())
 
+Markup = actions.Markup()
 
 class SUser(StatesGroup):
 	nick = State()
@@ -38,10 +38,13 @@ class SSticker(StatesGroup):
 
 async def check_nick(message: types.Message):
 	if User.select().where(User.nick == message.text):
-		await message.answer('Пользователь с таким ником уже существует, придумайте новый')
+		await message.answer('Пользователь с таким ником уже существует, придумайте новый',
+			reply_markup=Markup.every_state())
 		return True
 	if len(message.text) > User.nick.max_length:
-		await message.answer(f'Минимальная длинна ника {User.nick.max_length}')
+		await message.answer(f'Ник: {message.text} слишком длинный\
+			\nМинимальная длинна ника {User.nick.max_length}',
+			reply_markup=Markup.every_state())
 		return True
 	return False
 
@@ -55,13 +58,23 @@ async def about_user(message: types.Message):
 			callback_data='edit')
 		markup.add(edit_butt)
 		about_text = f'Ваш id: {user.chat_id}\
-		\nВаш ник: {emojize(user.nick)}\
+		\nВаш ник: {user.nick}\
 		\nВаш опыт: {user.score}'
 		await message.answer(about_text,
 			reply_markup=markup)
 	except User.DoesNotExist:
-		await message.answer('Вы ещё не создали профиль, напишите свой никнейм')
+		await message.answer('Вы ещё не создали профиль, напишите свой никнейм',
+			reply_markup=Markup.every_state())
 		await SUser.nick.set()
+
+
+@dp.message_handler(state='*', regexp='[Оо]+[Тт]+[Мм]+[Ее]+[Нн]+')
+async def test(message: types.Message, state: FSMContext):
+	if not await state.get_state():
+		return
+	await state.finish()
+	await message.reply('Отменено.',
+		reply_markup=Markup.after_cancel())
 
 
 @dp.message_handler(state=SUser.nick, content_types=types.ContentTypes.TEXT)
@@ -71,10 +84,11 @@ async def nick_user(message: types.Message, state: FSMContext):
 	if User.select().where(User.chat_id == message.chat.id):
 		user = User.get(chat_id=message.chat.id)
 		user.update(nick=message.text).execute()
-		await message.answer('Ник успешно изменен')
+		await message.answer(f'Теперь у вас ник: {message.text}')
 	else:
-		user = User.create(chat_id=message.chat.id, nick=demojize(message.text))
-		await message.answer('Профиль создан успешно')
+		user = User.create(chat_id=message.chat.id, nick=message.text)
+		await message.answer('Профиль создан успешно',
+			reply_markup=Markup.after_cancel())
 	await about_user(message)
 	await state.finish()
 
@@ -105,7 +119,8 @@ async def del_sticker(message: types.Message):
 	for stick in Sticker.select().where(Sticker.author == user):
 		await message.answer(f'id: {stick.id}')
 		await send_stick(message, stick)
-	await message.answer('Напишите id стикера для удаления')
+	await message.answer('Напишите id стикера для удаления',
+		reply_markup=Markup.every_state())
 	await SSticker.delete.set()
 
 
@@ -134,7 +149,8 @@ async def create_sticker(message: types.Message, state: FSMContext):
 		return
 	await state.update_data(sticker_id=message.sticker.file_id,
 		sticker_uniq_id=message.sticker.file_unique_id)
-	await message.answer('Придумайте название для стикера')
+	await message.answer('Придумайте название для стикера',
+		reply_markup=Markup.every_state())
 	await SSticker.name.set()
 
 
@@ -152,7 +168,8 @@ async def name_sticker(message: types.Message, state: FSMContext):
 	await state.finish()
 	await message.answer(f'Стикер {name} создан успешно\nid:')
 	await message.answer(Sticker.get(stick_uniq=data['sticker_uniq_id']).id)
-	await message.answer_sticker(data['sticker_id'])
+	await message.answer_sticker(data['sticker_id'],
+		reply_markup=Markup.after_cancel())
 
 
 @dp.message_handler(state=SSticker.delete, content_types=types.ContentTypes.TEXT)
@@ -166,7 +183,8 @@ async def delete_sticker(message: types.Message, state: FSMContext):
 		await message.answer(f'стикера с id: {message.text} - не существует')
 		return
 	await state.finish()
-	await message.answer('Стикер успешно удален')
+	await message.answer('Стикер успешно удален',
+		reply_markup=Markup.after_cancel())
 
 
 @dp.message_handler(content_types=types.ContentTypes.STICKER)
